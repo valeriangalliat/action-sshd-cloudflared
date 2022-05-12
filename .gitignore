@@ -1,0 +1,7 @@
+/authorized_keys
+/cloudflared
+/cloudflared.log
+/ssh_host_rsa_key
+/ssh_host_rsa_key.pub
+/sshd.pid
+/sshd_config

@@ -1,0 +1,105 @@
+#!/bin/bash -e
+#
+# GNU Bash required for process substitution `<()` later... didn't find a
+# better way to lazily read a `tail -f` stream and continue on first match.
+#
+
+cd "$GITHUB_ACTION_PATH"
+
+cloudflared_url=https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+echo "Downloading \`cloudflared\` from <$cloudflared_url>..."
+curl --location --silent --output cloudflared "$cloudflared_url"
+chmod +x cloudflared
+
+curl -s "https://api.github.com/users/$GITHUB_ACTOR/keys" | jq -r '.[].key' > authorized_keys
+
+if grep -q . authorized_keys; then
+    echo "Configured SSH key(s) for user: $GITHUB_ACTOR"
+else
+    # No keys for this user, fall back to password
+    echo "Setting SSH password..."
+
+    #
+    # This command could be "beautifully" lazy like the commented line below,
+    # but for some reason on GitHub Actions specifically (and nowhere else I
+    # could find) it logs the following warnings:
+    #
+    #     tr: write error: Broken pipe
+    #     tr: write error
+    #     base64: write error: Broken pipe
+    #     base64: write error
+    #
+    # Even though it still succeeds and behaves properly, I'd rather not have
+    # those warnings show up, so I use `head` twice, getting 16 bytes off
+    # `/dev/urandom`, Base64-encoding it (which should give us 25 characters),
+    # and we drop all the nonalphanumeric ones and trim it to 16 chars.
+    #
+    password=$(head -c 16 /dev/urandom | base64 | tr -cd '[:alnum:]' | head -c 16)
+    # password=$(base64 < /dev/urandom | tail -n +1 | tr -cd '[:alnum:]' | head -c16)
+
+    (echo "$password"; echo "$password") | sudo passwd "$USER"
+fi
+
+# `-q` is to make it quiet, `-N ''` for empty passphrase
+echo 'Creating SSH server RSA key...'
+ssh-keygen -q -f ssh_host_rsa_key -N ''
+
+echo 'Creating SSH server config...'
+sed "s,\$PWD,$PWD,;s,\$USER,$USER," sshd_config.template > sshd_config
+
+# echo 'Populating SSH keys'
+
+echo 'Starting SSH server...'
+/usr/sbin/sshd -f sshd_config -D &
+sshd_pid=$!
+
+echo 'Starting tmux session...'
+(cd "$GITHUB_WORKSPACE" && tmux new-session -d -s debug)
+
+echo 'Starting Cloudflare tunnel...'
+./cloudflared tunnel --no-autoupdate --url tcp://localhost:2222 > cloudflared.log 2>&1 &
+cloudflared_pid=$!
+
+#
+# Kinda annoying way to write somewhat "lazy" code... buffering and pipes
+# really don't make this easy.
+#
+# `grep --line-buffered` is required otherwise this hangs, as well as `sed -u`
+# (unbuffered).
+#
+# Doing it in a normal pipe still hangs but it somehow works with process
+# substitution `<()`.
+#
+# See <https://stackoverflow.com/a/45327054>.
+#
+# Could be rewritten with a loop that polls the file every second... then we
+# wouldn't have that issue, but it's not as beautiful.
+#
+url=$(head -1 <(tail -f cloudflared.log | grep --line-buffered trycloudflare.com | grep --line-buffered https:// | sed -u 's,.*https://,,;s, .*,,'))
+
+echo 'Run the following commands to connect:'
+echo '    '
+echo "    cloudflared access ssh --hostname $url --url localhost:2222"
+
+if [ -n "$password" ]; then
+    echo "    ssh -p 2222 $USER@localhost"
+    echo '    '
+    echo "    Password: $password"
+else
+    echo "    ssh -p 2222 $USER@localhost"
+    echo '    '
+fi
+
+#
+# The `channel` argument is not used but needs to be passed.
+#
+# `wait-for` will hang until we call `tmux wait-for -S channel` (which we
+# don't) but it'll also exit when all tmux sessions are over, which is
+# fine with us!
+#
+tmux wait-for channel
+
+echo 'Session ended'
+
+kill "$cloudflared_pid"
+kill "$sshd_pid"

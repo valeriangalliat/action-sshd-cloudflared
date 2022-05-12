@@ -1,0 +1,7 @@
+name: Debug via SSH
+description: Setup a SSH server with a tunnel to access it to debug your action via SSH.
+runs:
+  using: composite
+  steps:
+    - run: $GITHUB_ACTION_PATH/setup-ssh
+      shell: bash
