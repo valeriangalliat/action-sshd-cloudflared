@@ -1,7 +1,12 @@
 #!/bin/bash -e
 #
-# GNU Bash required for process substitution `<()` later... didn't find a
-# better way to lazily read a `tail -f` stream and continue on first match.
+# GNU Bash required for process substitution `<()` later.
+#
+# Environment variables:
+#
+# - `GITHUB_ACTION_PATH`: path to this repository.
+# - `GITHUB_ACTOR`: GitHub username of whoever triggered the action.
+# - `GITHUB_WORKSPACE`: default path for the workflow (the tmux session will start there).
 #
 
 cd "$GITHUB_ACTION_PATH"
@@ -16,7 +21,7 @@ curl -s "https://api.github.com/users/$GITHUB_ACTOR/keys" | jq -r '.[].key' > au
 if grep -q . authorized_keys; then
     echo "Configured SSH key(s) for user: $GITHUB_ACTOR"
 else
-    # No keys for this user, fall back to password
+    echo "No SSH key found for user: $GITHUB_ACTOR"
     echo "Setting SSH password..."
 
     #
@@ -40,19 +45,13 @@ else
     (echo "$password"; echo "$password") | sudo passwd "$USER"
 fi
 
-# `-N ''` is for empty passphrase
+# `-q` is to make it quiet, `-N ''` is for empty passphrase
 echo 'Creating SSH server key...'
-fingerprint=$(ssh-keygen -f ssh_host_rsa_key -N '' | grep -A1 fingerprint | tail -1 | cut -d' ' -f1)
-
-# Echo spaces because if we echo just a newline, GitHub will eat it
-echo '    '
-echo "    Server key fingerprint: $fingerprint"
-echo '    '
+ssh-keygen -q -f ssh_host_rsa_key -N ''
+echo "$fingerprint"
 
 echo 'Creating SSH server config...'
 sed "s,\$PWD,$PWD,;s,\$USER,$USER," sshd_config.template > sshd_config
-
-# echo 'Populating SSH keys'
 
 echo 'Starting SSH server...'
 /usr/sbin/sshd -f sshd_config -D &
@@ -61,46 +60,68 @@ sshd_pid=$!
 echo 'Starting tmux session...'
 (cd "$GITHUB_WORKSPACE" && tmux new-session -d -s debug)
 
+# Use `sed -u` (unbuffered) otherwise logs don't show up in the UI
 echo 'Starting Cloudflare tunnel...'
-./cloudflared tunnel --no-autoupdate --url tcp://localhost:2222 > cloudflared.log 2>&1 &
+./cloudflared tunnel --no-autoupdate --url tcp://localhost:2222 2>&1 | tee cloudflared.log | sed -u 's/^/cloudflared: /' &
 cloudflared_pid=$!
 
 #
-# Kinda annoying way to write somewhat "lazy" code... buffering and pipes
-# really don't make this easy.
+# Tail `cloudflared.log` to find the part where they share the relay
+# hostname.
 #
-# `grep --line-buffered` is required otherwise this hangs, as well as `sed -u`
-# (unbuffered).
+# Shell substitution `<()` required to prevent the pipeline from hanging
+# even after it finds a first match. See <https://stackoverflow.com/a/45327054>.
 #
-# Doing it in a normal pipe still hangs but it somehow works with process
-# substitution `<()`.
+# Requires GNU Bash.
 #
-# See <https://stackoverflow.com/a/45327054>.
-#
-# Could be rewritten with a loop that polls the file every second... then we
-# wouldn't have that issue, but it's not as beautiful.
-#
-url=$(head -1 <(tail -f cloudflared.log | grep --line-buffered trycloudflare.com | grep --line-buffered https:// | sed -u 's,.*https://,,;s, .*,,'))
+url=$(head -1 <(tail -f cloudflared.log | grep --line-buffered -o 'https://.*\.trycloudflare.com'))
 
-echo 'Run the following commands to connect:'
-echo '    '
-echo '    # Start the reverse Cloudflare Tunnel on port 2222'
-echo "    cloudflared access ssh --hostname $url --url localhost:2222"
-echo '    '
-echo '    # Add the SSH server fingerprint to your known hosts file'
-echo "    ssh-keygen -R '[localhost]:2222'"
-echo "    echo '[localhost]:2222 ssh-rsa $fingerprint' >> ~/.ssh/known_hosts"
-echo '    '
-echo '    # Connect'
+# POSIX-compatible but just hangs
+# url=$(tail -f cloudflared.log | grep --line-buffered -o 'https://.*\.trycloudflare.com' | head -1)
 
+# POSIX-compatible using simple polling instead
+# url=$(while ! grep -o 'https://.*\.trycloudflare.com' cloudflared.log; do sleep 1; done)
+
+# Ignore the `user@host` part at the end of the public key
+public_key=$(cut -d' ' -f1,2 < ssh_host_rsa_key.pub)
+
+# Echo spaces on empty lines because if we just echo a newline, GitHub will eat it
+echo '    '
+echo '    '
+echo '    '
+echo '    '
+echo 'Run the following command to connect:'
+echo '    '
+echo "    ssh-keygen -R action-sshd-cloudflared && echo 'action-sshd-cloudflared $public_key' >> ~/.ssh/known_hosts && ssh -o ProxyCommand='cloudflared access tcp --hostname $url' runner@action-sshd-cloudflared"
+
+#
+# Unlike Upterm that runs a custom SSH server to accept passwords in the
+# username field with the `:password` syntax, standard `sshd` doesn't
+# accept that, so we need to paste the password like mere mortals.
+#
 if [ -n "$password" ]; then
-    echo "    ssh -p 2222 $USER@localhost"
     echo '    '
-    echo "    Password: $password"
-else
-    echo "    ssh -p 2222 $USER@localhost"
-    echo '    '
+    echo "    # Password: $password"
 fi
+
+echo '    '
+echo "What the one-liner does:"
+echo '    '
+echo '    # Remove old SSH server public key for `action-sshd-cloudflared`'
+echo "    ssh-keygen -R action-sshd-cloudflared"
+echo '    '
+echo '    # Trust the public key for this session'
+echo "    echo 'action-sshd-cloudflared $public_key' >> ~/.ssh/known_hosts"
+echo '    '
+echo '    # Connect using `cloudflared` as a transport (SSH is end-to-end encrpted over this tunnel)'
+echo "    ssh -o ProxyCommand='cloudflared access tcp --hostname $url' runner@action-sshd-cloudflared"
+echo '    '
+echo "    # Alternative if you don't want to verify the host key"
+echo "    ssh -o ProxyCommand='cloudflared access tcp --hostname $url' -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=accept-new runner@action-sshd-cloudflared"
+echo '    '
+echo '    '
+echo '    '
+echo '    '
 
 #
 # The `channel` argument is not used but needs to be passed.
