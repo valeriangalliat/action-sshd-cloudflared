@@ -40,9 +40,14 @@ else
     (echo "$password"; echo "$password") | sudo passwd "$USER"
 fi
 
-# `-q` is to make it quiet, `-N ''` for empty passphrase
-echo 'Creating SSH server RSA key...'
-ssh-keygen -q -f ssh_host_rsa_key -N ''
+# `-N ''` is for empty passphrase
+echo 'Creating SSH server key...'
+fingerprint=$(ssh-keygen -f ssh_host_rsa_key -N '' | grep -A1 fingerprint | tail -1 | cut -d' ' -f1)
+
+# Echo spaces because if we echo just a newline, GitHub will eat it
+echo '    '
+echo "    Server key fingerprint: $fingerprint"
+echo '    '
 
 echo 'Creating SSH server config...'
 sed "s,\$PWD,$PWD,;s,\$USER,$USER," sshd_config.template > sshd_config
@@ -79,7 +84,14 @@ url=$(head -1 <(tail -f cloudflared.log | grep --line-buffered trycloudflare.com
 
 echo 'Run the following commands to connect:'
 echo '    '
+echo '    # Start the reverse Cloudflare Tunnel on port 2222'
 echo "    cloudflared access ssh --hostname $url --url localhost:2222"
+echo '    '
+echo '    # Add the SSH server fingerprint to your known hosts file'
+echo "    ssh-keygen -R '[localhost]:2222'"
+echo "    echo '[localhost]:2222 ssh-rsa $fingerprint' >> ~/.ssh/known_hosts"
+echo '    '
+echo '    # Connect'
 
 if [ -n "$password" ]; then
     echo "    ssh -p 2222 $USER@localhost"
