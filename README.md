@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - uses: valeriangalliat/action-sshd-cloudflared@master
+      - uses: valeriangalliat/action-sshd-cloudflared@v1
 ```
 
 Example output:
