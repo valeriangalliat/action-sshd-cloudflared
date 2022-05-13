@@ -104,6 +104,13 @@ if [ -n "$password" ]; then
     echo "    # Password: $password"
 fi
 
+#
+# You might notice we use `action-sshd-cloudflared` as a SSH host to connect.
+# This is abritrary and we could put anything here, because of the
+# `ProxyCommand` option later, the host is ignored and we directly go through
+# the tunnel exposed by `cloudflared`. But for the `ssh` command to be valid,
+# we still need to give it a host.
+#
 echo '    '
 echo "What the one-liner does:"
 echo '    '
