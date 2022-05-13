@@ -83,25 +83,24 @@ server and continue its steps.
 
 ### GitHub Action hangs without logs
 
-All you see in your workflow output is the step:
+All you see in your workflow output is the SSH step running but you
+can't expand the live logs.
 
-```
-Run valeriangalliat/action-sshd-cloudflared@v1
-```
+![Step with unavailable logs](img/unavailable-logs.png)
 
-But there's no way to expand logs, and it's just running there for
-minutes?
+This is quite annoying because the logs is where we output the host to
+connect to. 😬
 
 This is a recurring bug with GitHub Actions: if you open the action logs
-after the started running, it won't be able to show logs until the
-command completes. Or if you're lucky it will show logs from the moment
-you "joined", but that might not include the part you want to see like
-the SSH host.
+page after the step started running, it won't be able to show logs until
+the command completes. Or if you're lucky it will show logs from the
+moment you "joined", but that might not include the part you want to see
+like the SSH host.
 
-This is likely to happen if this is one of the first actions in your
-workflow.
+This is more likely to happen if this is one of the first actions in
+your workflow.
 
-At that point you need to cancel the action and restart it, and be sure
+At that point you need to cancel the action and restart it, making sure
 to open the logs right away, and reload the page aggressively in the
 beginning before a runner was found, e.g. when you see this:
 
