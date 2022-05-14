@@ -40,7 +40,7 @@ else
     # and we drop all the nonalphanumeric ones and trim it to 16 chars.
     #
     password=$(head -c 16 /dev/urandom | base64 | tr -cd '[:alnum:]' | head -c 16)
-    # password=$(base64 < /dev/urandom | tail -n +1 | tr -cd '[:alnum:]' | head -c16)
+    # password=$(base64 < /dev/urandom | tr -cd '[:alnum:]' | head -c16)
 
     (echo "$password"; echo "$password") | sudo passwd "$USER"
 fi
