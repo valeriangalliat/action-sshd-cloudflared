@@ -79,6 +79,15 @@ When logging in, you'll be automatically attached to a tmux session.
 Whenever you exit the session, the action will stop the tunnel and SSH
 server and continue its steps.
 
+## More details
+
+If you want to know everything about this program, you can read the
+detailed blog posts I wrote about the
+[client](https://www.codejam.info/2022/05/debugging-github-actions-workflow-ssh.html)
+and
+[server](https://www.codejam.info/2022/05/github-action-expose-ssh-server.html)
+parts of action-sshd-cloudflared. Enjoy!
+
 ## Troubleshooting
 
 ### GitHub Action hangs without logs
