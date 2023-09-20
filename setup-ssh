@@ -7,35 +7,31 @@
 # - `GITHUB_ACTION_PATH`: path to this repository.
 # - `GITHUB_ACTOR`: GitHub username of whoever triggered the action.
 # - `GITHUB_WORKSPACE`: default path for the workflow (the tmux session will start there).
-# - `IX_USERNAME`: (optional) The username on http://ix.io where SSH connection string will be dropped
-# - `IX_PASSWORD`: (optional) The password on http://ix.io
+# - `IX_USERNAME`: (optional) The username for ix.io where SSH connection string will be dropped
+# - `IX_PASSWORD`: (optional) The password for ix.io
 #
 
-# ix.io notification routine: save the URL of the paste in /tmp/ix-io.txt so we can delete
-# the paste from the ix.io server on session end
-
-notify_func()
-{
-    tee /dev/null
+notify_func() {
+    cat
 }
 
+#
+# ix.io notification routine: save the URL of the paste in `/tmp/ix-io.txt` so
+# we can delete the paste from the ix.io server on session end.
+#
 if [ ! -z "$IX_USERNAME" ] && [ ! -z "$IX_PASSWORD" ]; then
-notify_func()
-{
-    tee >(curl -u "$IX_USERNAME:$IX_PASSWORD" -F 'f:1=<-' http://ix.io 1>/tmp/ix-io.txt)
-}
+    notify_func() {
+        # `f:1=<-` will set the value of the `f:1` form field with data from `stdin`
+        tee >(curl -u "$IX_USERNAME:$IX_PASSWORD" -F 'f:1=<-' http://ix.io > /tmp/ix-io.txt)
+    }
 fi
 
-# Start of script
-
 # Check non-coreutils dependencies
-
 EXTERNAL_DEPS="curl jq ssh-keygen"
 
-for EXTERNAL_DEP in $EXTERNAL_DEPS
-do
-    if ! command -v "$EXTERNAL_DEP" 1>/dev/null 2>&1; then
-       echo "Command $EXTERNAL_DEP not installed on the system!" >&2
+for dep in $EXTERNAL_DEPS; do
+    if ! command -v "$dep" > /dev/null 2>&1; then
+       echo "Command $dep not installed on the system!" >&2
        exit 1
     fi
 done

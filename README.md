@@ -79,23 +79,23 @@ When logging in, you'll be automatically attached to a tmux session.
 Whenever you exit the session, the action will stop the tunnel and SSH
 server and continue its steps.
 
-## Getting SSH connection string via http://ix.io
+## Getting SSH connection string via [ix.io](http://ix.io)
 
 If you invoke this action via `dispatch_workflow`, you have no chance to
-get the SSH connection from Github user interface. This is annoying, and
-the solution for it is easy: to use the pastebin service like http://ix.io
+get the SSH connection from GitHub user interface. This is annoying, and
+the solution for it is easy: to use a pastebin service like [ix.io](http://ix.io).
 
 Why IX?
 
-- It is free
-- It supports creating named users with password on-the-fly, and provides
-the per-user paste list available at `http://ix.io/user/USERNAME`
-- All interactions can be done via simple `curl` requests
+* It is free
+* It supports creating named users with password on-the-fly, and
+  provides the per-user paste list available at `http://ix.io/user/<USERNAME>`
+* All interactions can be done via simple `curl` requests
 
-To get SSH connection string via IX, first generate random (or meaningful)
-user name and password and add them as `IX_USERNAME` and `IX_PASSWORD` Github
-project secrets. Next, add the environment variables to the action YAML file
-as follows:
+To get SSH connection string via IX, first generate random (or
+meaningful) user name and password and add them as `IX_USERNAME` and
+`IX_PASSWORD` GitHub project secrets. Next, add the environment
+variables to the action YAML file as follows:
 
 ```yaml
 name: CI
@@ -147,9 +147,9 @@ like the SSH host.
 This is more likely to happen if this is one of the first actions in
 your workflow.
 
-The preferred solution for such behavior is to use IX notification (see above),
-but if you don't want to go with external services, please read the old workarounds
-below:
+The preferred solution for such behavior is to use IX notification (see
+above), but if you don't want to go with external services, please read
+the old workarounds below:
 
 At that point you need to cancel the action and restart it, making sure
 to open the logs right away, and reload the page aggressively in the
