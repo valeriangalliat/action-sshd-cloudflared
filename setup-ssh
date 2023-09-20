@@ -28,6 +28,18 @@ fi
 
 # Start of script
 
+# Check non-coreutils dependencies
+
+EXTERNAL_DEPS="curl jq ssh-keygen"
+
+for EXTERNAL_DEP in $EXTERNAL_DEPS
+do
+    if ! command -v "$EXTERNAL_DEP" 1>/dev/null 2>&1; then
+       echo "Command $EXTERNAL_DEP not installed on the system!" >&2
+       exit 1
+    fi
+done
+
 cd "$GITHUB_ACTION_PATH"
 
 cloudflared_url=https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
