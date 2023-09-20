@@ -7,7 +7,38 @@
 # - `GITHUB_ACTION_PATH`: path to this repository.
 # - `GITHUB_ACTOR`: GitHub username of whoever triggered the action.
 # - `GITHUB_WORKSPACE`: default path for the workflow (the tmux session will start there).
+# - `IX_USERNAME`: (optional) The username on http://ix.io where SSH connection string will be dropped
+# - `IX_PASSWORD`: (optional) The password on http://ix.io
 #
+
+# ix.io notification routine: save the URL of the paste in /tmp/ix-io.txt so we can delete
+# the paste from the ix.io server on session end
+
+notify_func()
+{
+    tee /dev/null
+}
+
+if [ ! -z "$IX_USERNAME" ] && [ ! -z "$IX_PASSWORD" ]; then
+notify_func()
+{
+    tee >(curl -u "$IX_USERNAME:$IX_PASSWORD" -F 'f:1=<-' http://ix.io 1>/tmp/ix-io.txt)
+}
+fi
+
+# Start of script
+
+# Check non-coreutils dependencies
+
+EXTERNAL_DEPS="curl jq ssh-keygen"
+
+for EXTERNAL_DEP in $EXTERNAL_DEPS
+do
+    if ! command -v "$EXTERNAL_DEP" 1>/dev/null 2>&1; then
+       echo "Command $EXTERNAL_DEP not installed on the system!" >&2
+       exit 1
+    fi
+done
 
 cd "$GITHUB_ACTION_PATH"
 
@@ -85,50 +116,54 @@ url=$(head -1 <(tail -f cloudflared.log | grep --line-buffered -o 'https://.*\.t
 # Ignore the `user@host` part at the end of the public key
 public_key=$(cut -d' ' -f1,2 < ssh_host_rsa_key.pub)
 
-# Echo spaces on empty lines because if we just echo a newline, GitHub will eat it
-echo '    '
-echo '    '
-echo '    '
-echo '    '
-echo 'Run the following command to connect:'
-echo '    '
-echo "    ssh-keygen -R action-sshd-cloudflared && echo 'action-sshd-cloudflared $public_key' >> ~/.ssh/known_hosts && ssh -o ProxyCommand='cloudflared access tcp --hostname $url' runner@action-sshd-cloudflared"
+# Notify the actor and output to the run log
 
-#
-# Unlike Upterm that runs a custom SSH server to accept passwords in the
-# username field with the `:password` syntax, standard `sshd` doesn't
-# accept that, so we need to paste the password like mere mortals.
-#
-if [ -n "$password" ]; then
+(
+    # Echo spaces on empty lines because if we just echo a newline, GitHub will eat it
     echo '    '
-    echo "    # Password: $password"
-fi
+    echo '    '
+    echo '    '
+    echo '    '
+    echo 'Run the following command to connect:'
+    echo '    '
+    echo "    ssh-keygen -R action-sshd-cloudflared && echo 'action-sshd-cloudflared $public_key' >> ~/.ssh/known_hosts && ssh -o ProxyCommand='cloudflared access tcp --hostname $url' runner@action-sshd-cloudflared"
 
-#
-# You might notice we use `action-sshd-cloudflared` as a SSH host to connect.
-# This is abritrary and we could put anything here, because of the
-# `ProxyCommand` option later, the host is ignored and we directly go through
-# the tunnel exposed by `cloudflared`. But for the `ssh` command to be valid,
-# we still need to give it a host.
-#
-echo '    '
-echo "What the one-liner does:"
-echo '    '
-echo '    # Remove old SSH server public key for `action-sshd-cloudflared`'
-echo "    ssh-keygen -R action-sshd-cloudflared"
-echo '    '
-echo '    # Trust the public key for this session'
-echo "    echo 'action-sshd-cloudflared $public_key' >> ~/.ssh/known_hosts"
-echo '    '
-echo '    # Connect using `cloudflared` as a transport (SSH is end-to-end encrpted over this tunnel)'
-echo "    ssh -o ProxyCommand='cloudflared access tcp --hostname $url' runner@action-sshd-cloudflared"
-echo '    '
-echo "    # Alternative if you don't want to verify the host key"
-echo "    ssh -o ProxyCommand='cloudflared access tcp --hostname $url' -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=accept-new runner@action-sshd-cloudflared"
-echo '    '
-echo '    '
-echo '    '
-echo '    '
+    #
+    # Unlike Upterm that runs a custom SSH server to accept passwords in the
+    # username field with the `:password` syntax, standard `sshd` doesn't
+    # accept that, so we need to paste the password like mere mortals.
+    #
+    if [ -n "$password" ]; then
+        echo '    '
+        echo "    # Password: $password"
+    fi
+
+    #
+    # You might notice we use `action-sshd-cloudflared` as a SSH host to connect.
+    # This is abritrary and we could put anything here, because of the
+    # `ProxyCommand` option later, the host is ignored and we directly go through
+    # the tunnel exposed by `cloudflared`. But for the `ssh` command to be valid,
+    # we still need to give it a host.
+    #
+    echo '    '
+    echo "What the one-liner does:"
+    echo '    '
+    echo '    # Remove old SSH server public key for `action-sshd-cloudflared`'
+    echo "    ssh-keygen -R action-sshd-cloudflared"
+    echo '    '
+    echo '    # Trust the public key for this session'
+    echo "    echo 'action-sshd-cloudflared $public_key' >> ~/.ssh/known_hosts"
+    echo '    '
+    echo '    # Connect using `cloudflared` as a transport (SSH is end-to-end encrpted over this tunnel)'
+    echo "    ssh -o ProxyCommand='cloudflared access tcp --hostname $url' runner@action-sshd-cloudflared"
+    echo '    '
+    echo "    # Alternative if you don't want to verify the host key"
+    echo "    ssh -o ProxyCommand='cloudflared access tcp --hostname $url' -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=accept-new runner@action-sshd-cloudflared"
+    echo '    '
+    echo '    '
+    echo '    '
+    echo '    '
+) | notify_func
 
 #
 # The `channel` argument is not used but needs to be passed.
@@ -143,3 +178,7 @@ echo 'Session ended'
 
 kill "$cloudflared_pid"
 kill "$sshd_pid"
+
+if [ -s /tmp/ix-io.txt ]; then
+    curl -u "$IX_USERNAME:$IX_PASSWORD" -X DELETE "$(cat /tmp/ix-io.txt)"
+fi
