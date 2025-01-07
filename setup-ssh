@@ -38,6 +38,24 @@ done
 
 cd "$GITHUB_ACTION_PATH"
 
+bashrc_path=$(pwd)/bashrc
+
+#
+# Source our `bashrc` to auto start tmux upon SSH login.
+#
+# Added to `~/.bash_profile` because at least on GitHub default runner, there's
+# both a `~/.bash_profile` that sets up `nvm`, and a `~/.profile` that sources
+# `~/.bashrc` if interactive, but Bash will only source `~/.bash_profile` if it
+# exists, so in a GitHub runner, `~/.bashrc` will never be sourced when using a
+# login shell like over SSH (but it will if starting a sub non-login shell by
+# typing `bash`).
+#
+# So we hook into `~/.bash_profile` instead.
+#
+if ! grep -q "$bashrc_path" ~/.bash_profile; then
+    echo "source \"$bashrc_path\"" >> ~/.bash_profile
+fi
+
 cloudflared_url=https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
 echo "Downloading \`cloudflared\` from <$cloudflared_url>..."
 curl --location --silent --output cloudflared "$cloudflared_url"
