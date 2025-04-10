@@ -36,9 +36,25 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # runs-on: macos-latest # Also supported
     steps:
       - uses: actions/checkout@v2
-      - uses: valeriangalliat/action-sshd-cloudflared@v3
+      - uses: valeriangalliat/action-sshd-cloudflared@v4
+```
+
+### SSH key configuration
+
+By default, the action will use your GitHub user SSH keys for authentication.
+However sometimes the runner gets rate limited for the GitHub API and fails to
+retreive your keys.
+
+You can provide an explicit `authorized_keys` file using the `AUTHORIZED_KEYS`
+environment variable:
+
+```yaml
+- uses: valeriangalliat/action-sshd-cloudflared@v4
+env:
+  AUTHORIZED_KEYS: ssh-ed25519 THE_KEY user@host
 ```
 
 Example output:
@@ -106,7 +122,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - uses: valeriangalliat/action-sshd-cloudflared@v2
+      - uses: valeriangalliat/action-sshd-cloudflared@v4
         env:
           - IX_USERNAME: ${{ secrets.IX_USERNAME }}
           - IX_PASSWORD: ${{ secrets.IX_PASSWORD }}

@@ -9,6 +9,7 @@
 # - `GITHUB_WORKSPACE`: default path for the workflow (the tmux session will start there).
 # - `IX_USERNAME`: (optional) The username for ix.io where SSH connection string will be dropped
 # - `IX_PASSWORD`: (optional) The password for ix.io
+# - `AUTHORIZED_KEYS`: (optional) String containing SSH public keys to authorize
 #
 
 notify_func() {
@@ -53,15 +54,59 @@ bashrc_path=$(pwd)/bashrc
 # So we hook into `~/.bash_profile` instead.
 #
 if ! grep -q "$bashrc_path" ~/.bash_profile; then
+    echo >> ~/.bash_profile # On macOS runner there's no newline at the end of the file
     echo "source \"$bashrc_path\"" >> ~/.bash_profile
 fi
 
-cloudflared_url=https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
-echo "Downloading \`cloudflared\` from <$cloudflared_url>..."
-curl --location --silent --output cloudflared "$cloudflared_url"
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m)
+
+if [ "$ARCH" = "x86_64" ]; then
+    ARCH="amd64"
+elif [ "$ARCH" = "aarch64" ]; then
+    ARCH="arm64"
+fi
+
+# Install tmux on macOS runners if not present
+if [ "$OS" = "darwin" ] && ! command -v tmux > /dev/null 2>&1; then
+    echo "Installing tmux..."
+    brew install tmux
+fi
+
+if [ "$OS" = "darwin" ]; then
+    cloudflared_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-${OS}-${ARCH}.tgz"
+    echo "Downloading \`cloudflared\` from <$cloudflared_url>..."
+    curl --location --silent --output cloudflared.tgz "$cloudflared_url"
+    tar xf cloudflared.tgz
+    rm cloudflared.tgz
+else
+    cloudflared_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-${OS}-${ARCH}"
+    echo "Downloading \`cloudflared\` from <$cloudflared_url>..."
+    curl --location --silent --output cloudflared "$cloudflared_url"
+fi
+
 chmod +x cloudflared
 
-curl -s "https://api.github.com/users/$GITHUB_ACTOR/keys" | jq -r '.[].key' > authorized_keys
+if [ ! -z "$AUTHORIZED_KEYS" ]; then
+    echo "Using provided authorized keys"
+    echo "$AUTHORIZED_KEYS" > authorized_keys
+else
+    api_response=$(curl -s "https://api.github.com/users/$GITHUB_ACTOR/keys")
+
+    if echo "$api_response" | jq -e 'has("message")' >/dev/null; then
+        error_msg=$(echo "$api_response" | jq -r '.message')
+        echo "Error: $error_msg"
+
+        if ! echo "$error_msg" | grep -q "rate limit exceeded"; then
+            exit 1
+        fi
+
+        echo "Rate limit exceeded, falling back to password authentication..."
+        touch authorized_keys
+    else
+        echo "$api_response" | jq -r '.[].key' > authorized_keys
+    fi
+fi
 
 if grep -q . authorized_keys; then
     echo "Configured SSH key(s) for user: $GITHUB_ACTOR"
@@ -87,7 +132,12 @@ else
     password=$(head -c 16 /dev/urandom | base64 | tr -cd '[:alnum:]' | head -c 16)
     # password=$(base64 < /dev/urandom | tr -cd '[:alnum:]' | head -c16)
 
-    (echo "$password"; echo "$password") | sudo passwd "$USER"
+    if [ "$OS" = "darwin" ]; then
+        echo "Password authentication is not supported on macOS. Please use SSH keys."
+        exit 1
+    else
+        (echo "$password"; echo "$password") | sudo passwd "$USER"
+    fi
 fi
 
 # `-q` is to make it quiet, `-N ''` is for empty passphrase
