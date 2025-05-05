@@ -53,8 +53,8 @@ environment variable:
 
 ```yaml
 - uses: valeriangalliat/action-sshd-cloudflared@v4
-env:
-  AUTHORIZED_KEYS: ssh-ed25519 THE_KEY user@host
+  env:
+    AUTHORIZED_KEYS: ssh-ed25519 THE_KEY user@host
 ```
 
 Example output:
